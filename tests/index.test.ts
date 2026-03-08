@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
-// REMOVED: broken import — none of {inferType,
+import {
+  inferType,
   inferFromSamples,
   mergeInferredTypes,
   generateOutput,
@@ -7,7 +8,9 @@ import { describe, it, expect } from "bun:test";
   type InferredType,
   type InferredObject,
   type InferredUnion,
-  type CodegenOptions} exist in index.ts;
+  type CodegenOptions,
+  type InferredEnum,
+} from "../src/index.js";
 
 describe("schema-to-zod public API", () => {
   it("inferType identifies ISO date strings, integers, floats, and other scalars", () => {
@@ -39,10 +42,10 @@ describe("schema-to-zod public API", () => {
     const result = inferFromSamples(samples, { treatMissingAsOptional: true }) as InferredObject;
 
     expect(result.kind).toBe("object");
-    expect(result.fields.id.optional).toBe(false);
-    expect(result.fields.id.nullable).toBe(false);
-    expect(result.fields.metadata.nullable).toBe(true);
-    expect(result.fields.extra.optional).toBe(true);
+    expect(result.properties.id.isOptional).toBe(false);
+    expect(result.properties.id.type.kind).toBe("integer"); // Assuming non-nullable
+    expect(result.properties.metadata.type.kind).toBe("union"); // null | object
+    expect(result.properties.extra.isOptional).toBe(true);
   });
 
   it("mergeInferredTypes unions conflicting scalar types into InferredUnion", () => {
@@ -52,62 +55,90 @@ describe("schema-to-zod public API", () => {
     const merged = mergeInferredTypes(stringType, numberType) as InferredUnion;
 
     expect(merged.kind).toBe("union");
-    expect(merged.types).toContainEqual({ kind: "scalar", type: "string" });
-    expect(merged.types).toContainEqual({ kind: "scalar", type: "integer" });
+    expect(merged.variants).toContainEqual({ kind: "scalar", type: "string" });
+    expect(merged.variants).toContainEqual({ kind: "scalar", type: "integer" });
   });
 
   it("generateOutput produces TypeScript interface and Zod schema strings for nested objects", () => {
     const nestedObjectType: InferredType = {
       kind: "object",
-      fields: {
+      properties: {
         user: {
           type: {
             kind: "object",
-            fields: {
-              name: { type: { kind: "scalar", type: "string" }, optional: false, nullable: false },
-              age: { type: { kind: "scalar", type: "integer" }, optional: false, nullable: false }
+            properties: {
+              name: { type: { kind: "scalar", type: "string" }, isOptional: false },
+              age: { type: { kind: "scalar", type: "integer" }, isOptional: false }
             }
           },
-          optional: false,
-          nullable: false
+          isOptional: false
         }
       }
     };
 
     const options: CodegenOptions = {
-      rootName: "ApiResponse",
-      export: true,
-      includeInterface: true,
-      includeZod: true,
-      indentSize: 2
+      interfaceName: "ApiResponse",
+      includeExports: true,
+      useSemicolons: true,
+      indentation: "  "
     };
 
-    const output = generateOutput(nestedObjectType, options);
+    const output = generateOutput(nestedObjectType as InferredObject, options);
 
-    expect(output.interface).toContain("interface ApiResponse");
-    expect(output.interface).toContain("user:");
-    expect(output.zodSchema).toContain("z.object");
-    expect(output.combined).toContain(output.interface);
-    expect(output.combined).toContain(output.zodSchema);
+    expect(output.interfaceString).toContain("interface ApiResponse");
+    expect(output.interfaceString).toContain("user:");
+    expect(output.schemaString).toContain("z.object");
+    expect(output.combinedOutput).toContain(output.interfaceString);
+    expect(output.combinedOutput).toContain(output.schemaString);
   });
 
   it("generateZodSchema produces z.array(...) for array root types", () => {
     const arrayType: InferredType = {
       kind: "array",
-      items: { kind: "scalar", type: "string" }
+      elementType: { kind: "scalar", type: "string" }
     };
 
     const options: CodegenOptions = {
-      rootName: "StringArray",
-      export: true,
-      includeInterface: true,
-      includeZod: true,
-      indentSize: 2
+      interfaceName: "StringArray",
+      includeExports: true,
+      useSemicolons: true,
+      indentation: "  "
     };
 
     const schema = generateZodSchema(arrayType, options);
 
     expect(schema).toContain("z.array");
     expect(schema).not.toContain("z.object({})");
+  });
+
+  it("inferType infers enum from a string array if enabled", () => {
+    const enumValues = ["red", "green", "blue"];
+    const result = inferType(enumValues, { inferEnums: true });
+    expect(result.kind).toBe("enum");
+    expect((result as InferredEnum).values).toEqual(expect.arrayContaining(enumValues));
+  });
+
+  it("inferType does not infer enum from a string array if disabled", () => {
+    const enumValues = ["red", "green", "blue"];
+    const result = inferType(enumValues, { inferEnums: false });
+    expect(result.kind).toBe("array");
+    expect((result as any).elementType).toEqual({ kind: "scalar", type: "string" });
+  });
+
+  it("generateZodSchema produces z.enum(...) for enum types", () => {
+    const enumType: InferredType = {
+      kind: "enum",
+      values: ["small", "medium", "large"]
+    };
+
+    const options: CodegenOptions = {
+      schemaName: "SizeEnum",
+      includeExports: true,
+      useSemicolons: true,
+      indentation: "  "
+    };
+
+    const schema = generateZodSchema(enumType, options);
+    expect(schema).toContain("z.enum([\"small\", \"medium\", \"large\"])");
   });
 });

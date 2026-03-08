@@ -11,7 +11,8 @@ import type {
   ArrayType,
   UnionType,
   InferredField,
-  MergeOptions
+  MergeOptions,
+  EnumType,
 } from "./types.js";
 
 const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})$/;
@@ -37,35 +38,42 @@ function isIso8601Date(value: string): boolean {
  */
 export function inferType(value: unknown, options?: MergeOptions): InferredType {
   if (value === null) {
-    return { kind: "null" } satisfies NullType;
+    return { kind: "scalar", type: "null" } satisfies NullType;
   }
 
   if (typeof value === "boolean") {
-    return { kind: "boolean" } satisfies BooleanType;
+    return { kind: "scalar", type: "boolean" } satisfies BooleanType;
   }
 
   if (typeof value === "number") {
     if (options?.strictNumberTypes === false) {
-      return { kind: "number" } satisfies NumberType;
+      return { kind: "scalar", type: "number" } satisfies NumberType;
     }
     return Number.isInteger(value)
-      ? ({ kind: "integer" } satisfies IntegerType)
-      : ({ kind: "float" } satisfies FloatType);
+      ? ({ kind: "scalar", type: "integer" } satisfies IntegerType)
+      : ({ kind: "scalar", type: "float" } satisfies FloatType);
   }
 
   if (typeof value === "string") {
     if (options?.coerceDates !== false && isIso8601Date(value)) {
-      return { kind: "date" } satisfies DateType;
+      return { kind: "scalar", type: "date" } satisfies DateType;
     }
-    return { kind: "string" } satisfies StringType;
+    return { kind: "scalar", type: "string" } satisfies StringType;
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
       return {
         kind: "array",
-        elementType: { kind: "null" },
+        elementType: { kind: "scalar", type: "null" }, // Default to null for empty arrays
       } satisfies ArrayType;
+    }
+
+    // Check if all elements are strings and infer enum if option is enabled
+    if (options?.inferEnums && value.every(item => typeof item === "string")) {
+      // Ensure uniqueness and sort for consistent enum definition
+      const uniqueValues = Array.from(new Set(value as string[])).sort();
+      return { kind: "enum", values: uniqueValues } satisfies EnumType;
     }
 
     const elementType = value.slice(1).reduce(
@@ -127,32 +135,47 @@ function mergeObjectTypes(a: ObjectType, b: ObjectType): ObjectType {
  * @returns Merged type representing both inputs
  */
 export function mergeInferredTypes(a: InferredType, b: InferredType): InferredType {
-  if (a.kind === b.kind) {
-    switch (a.kind) {
-      case "object":
-        return mergeObjectTypes(a, b);
-      case "array":
-        return {
-          kind: "array",
-          elementType: mergeInferredTypes(a.elementType, b.elementType),
-        };
-      case "union":
-        return {
-          kind: "union",
-          variants: [...a.variants, ...b.variants],
-        };
-      default:
-        return a;
-    }
+  // If types are identical, return one of them
+  if (JSON.stringify(a) === JSON.stringify(b)) {
+    return a;
   }
 
+  // Handle merging enums
+  if (a.kind === "enum" && b.kind === "enum") {
+    const mergedValues = Array.from(new Set([...a.values, ...b.values])).sort();
+    return { kind: "enum", values: mergedValues } satisfies EnumType;
+  }
+
+  // If one is a union, add the other to its variants
   if (a.kind === "union") {
-    return { kind: "union", variants: [...a.variants, b] };
+    // Avoid adding duplicates to the union
+    if (!a.variants.some(variant => JSON.stringify(variant) === JSON.stringify(b))) {
+      return { kind: "union", variants: [...a.variants, b] };
+    }
+    return a;
   }
   if (b.kind === "union") {
-    return { kind: "union", variants: [a, ...b.variants] };
+    // Avoid adding duplicates to the union
+    if (!b.variants.some(variant => JSON.stringify(variant) === JSON.stringify(a))) {
+      return { kind: "union", variants: [a, ...b.variants] };
+    }
+    return b;
   }
 
+  // If both are objects, merge their properties
+  if (a.kind === "object" && b.kind === "object") {
+    return mergeObjectTypes(a, b);
+  }
+
+  // If both are arrays, merge their element types
+  if (a.kind === "array" && b.kind === "array") {
+    return {
+      kind: "array",
+      elementType: mergeInferredTypes(a.elementType, b.elementType),
+    };
+  }
+
+  // If types are different and not handled above, create a union
   return { kind: "union", variants: [a, b] };
 }
 
@@ -181,7 +204,8 @@ function removeOptionality(type: InferredType): InferredType {
         kind: "union",
         variants: type.variants.map(removeOptionality),
       };
-    default:
+    case "enum":
+    case "scalar":
       return type;
   }
 }
@@ -199,17 +223,20 @@ function removeOptionality(type: InferredType): InferredType {
  */
 export function inferFromSamples(samples: readonly unknown[], options?: MergeOptions): InferredType {
   if (samples.length === 0) {
-    throw new Error("At least one sample is required for type inference");
+    throw new Error("Cannot infer schema from an empty array of samples.");
   }
 
-  const merged = samples.slice(1).reduce(
-    (acc, sample) => mergeInferredTypes(acc, inferType(sample, options)),
-    inferType(samples[0], options)
-  );
+  let inferredSchema: InferredType = inferType(samples[0], options);
 
+  for (let i = 1; i < samples.length; i++) {
+    const currentInferred = inferType(samples[i], options);
+    inferredSchema = mergeInferredTypes(inferredSchema, currentInferred);
+  }
+
+  // If detectOptionalityFromMissingKeys is false, all fields should be required.
   if (options?.detectOptionalityFromMissingKeys === false) {
-    return removeOptionality(merged);
+    inferredSchema = removeOptionality(inferredSchema);
   }
 
-  return merged;
+  return inferredSchema;
 }

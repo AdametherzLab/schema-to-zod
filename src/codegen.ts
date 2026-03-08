@@ -12,6 +12,8 @@ import type {
   ObjectType,
   ArrayType,
   UnionType,
+  EnumType,
+  ScalarType,
   CodegenOptions,
 } from "./types.js";
 
@@ -38,16 +40,18 @@ function resolveOptions(options?: CodegenOptions): Required<CodegenOptions> {
 }
 
 // Type guards
-const isStringType = (t: InferredType): t is StringType => t.kind === "string";
-const isNumberType = (t: InferredType): t is NumberType => t.kind === "number";
-const isIntegerType = (t: InferredType): t is IntegerType => t.kind === "integer";
-const isFloatType = (t: InferredType): t is FloatType => t.kind === "float";
-const isBooleanType = (t: InferredType): t is BooleanType => t.kind === "boolean";
-const isNullType = (t: InferredType): t is NullType => t.kind === "null";
-const isDateType = (t: InferredType): t is DateType => t.kind === "date";
+const isScalarType = (t: InferredType): t is ScalarType => t.kind === "scalar";
+const isStringType = (t: InferredType): t is StringType => isScalarType(t) && t.type === "string";
+const isNumberType = (t: InferredType): t is NumberType => isScalarType(t) && t.type === "number";
+const isIntegerType = (t: InferredType): t is IntegerType => isScalarType(t) && t.type === "integer";
+const isFloatType = (t: InferredType): t is FloatType => isScalarType(t) && t.type === "float";
+const isBooleanType = (t: InferredType): t is BooleanType => isScalarType(t) && t.type === "boolean";
+const isNullType = (t: InferredType): t is NullType => isScalarType(t) && t.type === "null";
+const isDateType = (t: InferredType): t is DateType => isScalarType(t) && t.type === "date";
 const isObjectType = (t: InferredType): t is ObjectType => t.kind === "object";
 const isArrayType = (t: InferredType): t is ArrayType => t.kind === "array";
 const isUnionType = (t: InferredType): t is UnionType => t.kind === "union";
+const isEnumType = (t: InferredType): t is EnumType => t.kind === "enum";
 
 function generateTypeScriptType(type: InferredType, indent: string, useSemicolons: boolean): string {
   if (isStringType(type) || isDateType(type)) return "string";
@@ -61,6 +65,9 @@ function generateTypeScriptType(type: InferredType, indent: string, useSemicolon
   }
   if (isUnionType(type)) {
     return type.variants.map(v => generateTypeScriptType(v, indent, useSemicolons)).join(" | ");
+  }
+  if (isEnumType(type)) {
+    return type.values.map(v => `'${v}'`).join(" | ");
   }
   return "unknown";
 }
@@ -77,7 +84,9 @@ function generateObjectTypeString(obj: InferredObject, indent: string, useSemico
     return `${nextIndent}${key}${optional}: ${typeStr}${terminator}`;
   });
   
-  return `{\n${lines.join("\n")}\n${indent}}`;
+  return `{
+${lines.join("\n")}
+${indent}}`;
 }
 
 /**
@@ -117,6 +126,10 @@ function generateZodSchemaType(type: InferredType, indent: string): string {
     const variants = type.variants.map(v => generateZodSchemaType(v, indent));
     return `z.union([${variants.join(", ")}])`;
   }
+  if (isEnumType(type)) {
+    const values = type.values.map(v => JSON.stringify(v)).join(", ");
+    return `z.enum([${values}])`;
+  }
   return "z.unknown()";
 }
 
@@ -131,7 +144,9 @@ function generateZodObjectString(obj: InferredObject, indent: string): string {
     return `${nextIndent}${key}: ${schema}`;
   });
   
-  return `z.object({\n${lines.join(",\n")}\n${indent}})`;
+  return `z.object({
+${lines.join(",\n")}
+${indent}})`;
 }
 
 /**

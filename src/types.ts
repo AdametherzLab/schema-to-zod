@@ -5,53 +5,27 @@
 
 /** Discriminated union representing all possible inferred type shapes. */
 export type InferredType =
-  | StringType
-  | NumberType
-  | IntegerType
-  | FloatType
-  | BooleanType
-  | NullType
-  | DateType
+  | ScalarType
   | ObjectType
   | ArrayType
-  | UnionType;
+  | UnionType
+  | EnumType;
 
-/** String scalar type with optional format detection. */
-export interface StringType {
-  readonly kind: "string";
+/** Base interface for scalar types. */
+export interface ScalarType {
+  readonly kind: "scalar";
+  readonly type: "string" | "number" | "integer" | "float" | "boolean" | "null" | "date";
   /** Detected format hint for validation (e.g., ISO 8601 dates). */
   readonly format?: "datetime" | "email" | "uuid" | "url";
 }
 
-/** Generic number type when integer vs float distinction is unclear. */
-export interface NumberType {
-  readonly kind: "number";
-}
-
-/** Integer type for whole numbers. */
-export interface IntegerType {
-  readonly kind: "integer";
-}
-
-/** Float type for decimal numbers. */
-export interface FloatType {
-  readonly kind: "float";
-}
-
-/** Boolean type. */
-export interface BooleanType {
-  readonly kind: "boolean";
-}
-
-/** Null type representing explicit null values. */
-export interface NullType {
-  readonly kind: "null";
-}
-
-/** Date type representing ISO 8601 date strings. */
-export interface DateType {
-  readonly kind: "date";
-}
+export type StringType = ScalarType & { readonly type: "string" };
+export type NumberType = ScalarType & { readonly type: "number" };
+export type IntegerType = ScalarType & { readonly type: "integer" };
+export type FloatType = ScalarType & { readonly type: "float" };
+export type BooleanType = ScalarType & { readonly type: "boolean" };
+export type NullType = ScalarType & { readonly type: "null" };
+export type DateType = ScalarType & { readonly type: "date" };
 
 /** Object type with mapped property definitions. */
 export interface ObjectType {
@@ -71,6 +45,12 @@ export interface UnionType {
   readonly kind: "union";
   /** All possible type variants in this union. */
   readonly variants: readonly InferredType[];
+}
+
+/** Enum type representing a fixed set of string values. */
+export interface EnumType {
+  readonly kind: "enum";
+  readonly values: readonly string[];
 }
 
 /** Field metadata capturing the inferred type and optionality status. */
@@ -104,6 +84,11 @@ export interface MergeOptions {
    * @default true
    */
   readonly strictNumberTypes?: boolean;
+  /**
+   * Infer Zod enums from arrays of strings if all elements are unique strings.
+   * @default false
+   */
+  readonly inferEnums?: boolean;
 }
 
 /** Configuration options for code generation output formatting. */
