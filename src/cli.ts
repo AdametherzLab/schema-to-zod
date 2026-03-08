@@ -1,8 +1,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { inferFromSamples } from "./infer.js";
-import { generateOutput } from "./generator.js";
-import type { MergeOptions, CodegenOptions, InferredType } from "./types.js";
+import { generateOutput, generateInterface, generateZodSchema } from "./codegen.js";
+import type { MergeOptions, CodegenOptions, InferredType, ObjectType } from "./types.js";
 
 interface CliOptions {
   readonly files: readonly string[];
@@ -136,10 +136,28 @@ export async function main(argv: readonly string[] = process.argv): Promise<void
     indentation: "  "
   };
 
-  const output = generateOutput(inferred, codegenOptions, {
-    includeInterface: options.includeInterface,
-    includeZod: options.includeZod
-  });
+  let output = "";
+  
+  if (inferred.kind !== "object") {
+    // For non-object root types, we can only generate Zod schema
+    if (options.includeInterface) {
+      console.error("Warning: Cannot generate interface for non-object root type");
+    }
+    if (options.includeZod) {
+      output = generateZodSchema(inferred, codegenOptions);
+    }
+  } else {
+    if (options.includeInterface && options.includeZod) {
+      const result = generateOutput(inferred.properties, codegenOptions);
+      output = result.combinedOutput;
+    } else if (options.includeInterface) {
+      output = generateInterface(inferred.properties, codegenOptions);
+    } else if (options.includeZod) {
+      // Wrap properties back into object type for schema generation
+      const objType: ObjectType = { kind: "object", properties: inferred.properties };
+      output = generateZodSchema(objType, codegenOptions);
+    }
+  }
 
   if (options.outPath) {
     const outPath = path.isAbsolute(options.outPath) 

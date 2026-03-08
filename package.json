@@ -1,6 +1,6 @@
 {
   "name": "@adametherzlab/schema-to-zod",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "CLI that takes a sample JSON file or JSON Schema and outputs a TypeScript type plus a matching Zod schema — no hand-rolling",
   "type": "module",
   "main": "./dist/index.js",

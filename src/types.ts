@@ -74,6 +74,11 @@ export interface MergeOptions {
    * @default true
    */
   readonly detectOptionalityFromMissingKeys?: boolean;
+  /**
+   * Alias for detectOptionalityFromMissingKeys.
+   * @default true
+   */
+  readonly treatMissingAsOptional?: boolean;
   /** 
    * Convert ISO 8601 date strings to datetime format instead of plain strings.
    * @default true

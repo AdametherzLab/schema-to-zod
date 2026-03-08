@@ -6,7 +6,7 @@
  * and CLI capabilities without spawning a subprocess.
  * 
  * @example
- * ```typescript
+ * 
  * import { inferFromSamples, generateOutput, main } from "schema-to-zod";
  * 
  * // Infer types from sample data
@@ -17,7 +17,7 @@
  *   interfaceName: "Item",
  *   schemaName: "ItemSchema"
  * });
- * ```
+ * 
  * 
  * @module
  */
@@ -34,6 +34,14 @@ export {
   generateOutput,
   type GeneratedOutput,
 } from "./codegen.js";
+
+export {
+  fromOpenApiSchema,
+  fromOpenApiDocument,
+  type OpenApiSchema,
+  type OpenApiDocument,
+  type OpenApiConvertOptions,
+} from "./openapi.js";
 
 export { main } from "./cli.js";
 

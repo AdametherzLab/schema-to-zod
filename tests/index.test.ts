@@ -5,6 +5,8 @@ import {
   mergeInferredTypes,
   generateOutput,
   generateZodSchema,
+  fromOpenApiSchema,
+  fromOpenApiDocument,
   type InferredType,
   type InferredObject,
   type InferredUnion,
@@ -140,6 +142,103 @@ describe("schema-to-zod public API", () => {
     };
 
     const schema = generateZodSchema(enumType, options);
-    expect(schema).toContain("z.enum([\"small\", \"medium\", \"large\"])");
+    expect(schema).toContain('z.enum(["small", "medium", "large"])');
+  });
+});
+
+describe("OpenAPI/Swagger Schema Support", () => {
+  it("fromOpenApiSchema converts basic OpenAPI types correctly", () => {
+    const stringSchema = { type: "string" };
+    expect(fromOpenApiSchema(stringSchema)).toEqual({ kind: "scalar", type: "string" });
+
+    const integerSchema = { type: "integer" };
+    expect(fromOpenApiSchema(integerSchema)).toEqual({ kind: "scalar", type: "integer" });
+
+    const numberSchema = { type: "number" };
+    expect(fromOpenApiSchema(numberSchema)).toEqual({ kind: "scalar", type: "float" });
+
+    const boolSchema = { type: "boolean" };
+    expect(fromOpenApiSchema(boolSchema)).toEqual({ kind: "scalar", type: "boolean" });
+
+    const dateSchema = { type: "string", format: "date-time" };
+    expect(fromOpenApiSchema(dateSchema)).toEqual({ kind: "scalar", type: "date" });
+  });
+
+  it("fromOpenApiSchema handles objects with required fields", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        id: { type: "integer" },
+        name: { type: "string" },
+        email: { type: "string" }
+      },
+      required: ["id", "name"]
+    };
+
+    const result = fromOpenApiSchema(schema) as import("../src/types.js").ObjectType;
+    expect(result.kind).toBe("object");
+    expect(result.properties.id.isOptional).toBe(false);
+    expect(result.properties.name.isOptional).toBe(false);
+    expect(result.properties.email.isOptional).toBe(true);
+  });
+
+  it("fromOpenApiSchema handles arrays, enums, and nullable types", () => {
+    const arraySchema = {
+      type: "array",
+      items: { type: "string" }
+    };
+    const arrayResult = fromOpenApiSchema(arraySchema) as import("../src/types.js").ArrayType;
+    expect(arrayResult.kind).toBe("array");
+    expect(arrayResult.elementType).toEqual({ kind: "scalar", type: "string" });
+
+    const enumSchema = {
+      type: "string",
+      enum: ["active", "inactive", "pending"]
+    };
+    const enumResult = fromOpenApiSchema(enumSchema) as import("../src/types.js").EnumType;
+    expect(enumResult.kind).toBe("enum");
+    expect(enumResult.values).toEqual(["active", "inactive", "pending"]);
+
+    const nullableSchema = {
+      type: "string",
+      nullable: true
+    };
+    const nullableResult = fromOpenApiSchema(nullableSchema) as import("../src/types.js").UnionType;
+    expect(nullableResult.kind).toBe("union");
+    expect(nullableResult.variants).toContainEqual({ kind: "scalar", type: "string" });
+    expect(nullableResult.variants).toContainEqual({ kind: "scalar", type: "null" });
+  });
+
+  it("fromOpenApiDocument extracts all schemas from components", () => {
+    const doc = {
+      openapi: "3.0.0",
+      components: {
+        schemas: {
+          User: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              name: { type: "string" }
+            },
+            required: ["id"]
+          },
+          Status: {
+            type: "string",
+            enum: ["active", "inactive"]
+          }
+        }
+      }
+    };
+
+    const result = fromOpenApiDocument(doc);
+    expect(Object.keys(result)).toContain("User");
+    expect(Object.keys(result)).toContain("Status");
+    
+    const userType = result.User as import("../src/types.js").ObjectType;
+    expect(userType.kind).toBe("object");
+    expect(userType.properties.id.isOptional).toBe(false);
+    
+    const statusType = result.Status as import("../src/types.js").EnumType;
+    expect(statusType.kind).toBe("enum");
   });
 });

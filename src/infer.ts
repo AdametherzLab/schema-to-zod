@@ -198,3 +198,37 @@ function removeOptionality(type: InferredType): InferredType {
       return {
         kind: "array",
         elementType: removeOptionality(type.elementType),
+      };
+    case "union": {
+      return {
+        kind: "union",
+        variants: type.variants.map((v) => removeOptionality(v)),
+      };
+    }
+    case "enum":
+      return type;
+    default:
+      return type;
+  }
+}
+
+/**
+ * Infer a unified type from multiple sample objects.
+ * Merges types together, detecting optionality from missing keys.
+ * @param samples - Array of sample objects to analyze
+ * @param options - Configuration for type inference and merging
+ * @returns The merged inferred type representing all samples
+ */
+export function inferFromSamples(
+  samples: readonly unknown[],
+  options?: MergeOptions
+): InferredType {
+  if (samples.length === 0) {
+    return { kind: "scalar", type: "null" };
+  }
+
+  return samples.slice(1).reduce(
+    (acc, sample) => mergeInferredTypes(acc, inferType(sample, options)),
+    inferType(samples[0], options)
+  );
+}
