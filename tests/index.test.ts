@@ -43,7 +43,8 @@ describe("schema-to-zod public API", () => {
 
     expect(result.kind).toBe("object");
     expect(result.properties.id.isOptional).toBe(false);
-    expect(result.properties.id.type.kind).toBe("integer"); // Assuming non-nullable
+    expect(result.properties.id.type.kind).toBe("scalar"); // Assuming non-nullable
+    expect((result.properties.id.type as any).type).toBe("integer");
     expect(result.properties.metadata.type.kind).toBe("union"); // null | object
     expect(result.properties.extra.isOptional).toBe(true);
   });
